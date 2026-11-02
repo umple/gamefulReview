@@ -1,0 +1,188 @@
+// Core  model for a software layer that enables
+// gamification of review by humans of software systems
+// that have been generated or modified by AI.
+//
+// Process:
+// 1.  There is a set of requirements that the AI uses generally
+//     pre-created by the human. Humans can add more of these as
+//     review progresses, or even change them. AIs can also suggest
+//     requirements. The requirements are in Umple or referenced by Umple
+//     using req clauses.
+// 2.  When AI generates the system, it generates models in Umple, and
+//     also code embedded in the Umple for parts of the system that
+//     cannot be directly represented as models
+// 3.  The AI tags the model elements and code elements with the
+//     IDs of requirements using umple's implementsReq keyword
+// 4.  Umple does its own extensive validation of models.
+// 5.  The AI iterates, fixing problems with models until there are no
+//     errors, and perhaps only a few warnings that it chooses to leave for
+//     the human.
+// 6.  The AI then invokes deterministic generators built in to Umple
+//     that convert models into code and blend with AI-generated code from
+//     step 2 to produce an attempt at a final system.
+// 7.  As with step 3, the deterministic generators tag the generated code
+//     with the IDs of requirements.
+// 8.  As with step 4, the AI iterates, fixing compilation errors in the
+//     generated system.
+// 9.  The AI generates tests based on the requirements.
+// 10. The AI iterates until the tests pass.
+// 11. The Verification and Evidence layer then presents the results for human
+//     reviewers to consider. The human sees the model(and embedded code)
+//     and the VerifiableSituations they are supposed to iterate through.
+// 12. After humans do reviews they get points for making suggestions for
+//     various types of change.
+
+// A verifiable situation is a reference to the creation or change to a piece
+// of a system (part of a design model, code block, requirement, test) that a
+// human needs to review. These are generally created automatically during
+// the process of system creation or modification by AI, but can also be 
+// created by humans if they think of things that need verification too.
+//
+// These may focus on requirement implementation (where any issue including
+// externally reported bugs are requirements). They may also be responses to
+// previous VerifiableSituations
+class VerifiableSituation {
+  summary; // AI or human written summary of what needs verifying
+  timeStamp; // when this was first created
+  shaOfRepo; // Specific state of the repo this refers to
+  delta; // Change in the code/model (limited to 100 lines).
+
+  * -- * Requirement linkedRequirement;
+  * -- * GeneralPrinciple linkedGeneralPrinciples;
+
+  // Model elements created or modified
+  // If the AI has done its job, these should have implementsReq clauses too
+  * -- * UmpleModelElement linkedModelElements;
+
+  // Tests created or modified for the implemented requirement or change
+  * -- * Test linkedTests;
+  
+  // Code blocks such as methods integrated into the model
+  * -- * CodeBlock linkedCodeBlocks;
+
+  // Prior Verifiable Situations that have been responded to by this one
+  * -- * VerifiableSituation previousSituationsFixed;
+  
+  // Textual summary of why the AI thinks the 
+  1 situationWithSystemEvidence -- * EvidenceItem systemGeneratedEvidence;
+  
+  // Textual summary of the human's response to this
+  // including request for tests, requests for new requirements,
+  // pointing out defects
+  1 -- * RequestedChange humanRequestedChange;
+  ReviewCategory reviewCategory;
+  
+  // Evidence provided by the human such as failed manual tests
+  1 situationWithHumanEvidence -- * EvidenceItem humanSuppliedEvidence;
+  
+  // How many points the human received for this respones
+  // This would be calculated algorithmically (TBD)
+  Double reviewPointsObtainedByHuman;
+  
+  // State machine describing states of this
+  state {
+    Pending {
+      systemCheckPass -> SystemCheckPassed;
+      noApplicableSystemCheck -> SystemCheckPassed;
+      humanDeclaresNotApplicable -> NotApplicable;
+      systemCheckFail -> Failed;
+      systemCheckUncertain -> SystemCheckInconclusive;
+      displayColour yellow;
+    }
+    Passed {
+      changeInSystem -> Historical;
+      displayColour lightGreen;
+    }
+    Failed {
+      remedialActionTaken -> Historical;
+      changeInSystem -> Historical;
+      displayColour red;
+    }
+    ConcernRaised{
+      remedialActionTaken -> Historical;
+      changeInSystem -> Historical;
+      displayColour orange;
+    }
+    AwaitingHumanReview {
+      humanReviewFail -> Failed;
+      humanReviewNotApplicable -> NotApplicable;
+      humanReviewConcern -> ConcernRaised;
+      SystemCheckInconclusive {
+        humanReviewPass [rationaleProvided] -> Passed;
+        displayColour lightYellow;
+      }
+      SystemCheckPassed {
+
+        humanReviewPass -> Passed;
+        displayColour #DDFFDD;
+      }
+    }
+    NotApplicable {
+      changeInSystem -> Historical;
+      displayColour lightGray;
+    }
+    
+    // 
+    Historical {
+    }
+  }
+}
+
+// Items in files are system elements that may be generated by the AI or by
+// humans. They can be referred to in Evidence and VerifiableSituations
+class ItemInFile {
+  repository;
+  path;
+  startLine;
+}
+
+// Requirements managed by Umple and used by AI to create the system
+// They use the umple req code. They can be URLs pointing to external files
+class Requirement {
+  isA ItemInFile;
+  id;
+  summary; // short version, compressed from larger requirements statements
+}
+
+// Software engineering principles are implicit requirements
+// that should be invoked in every designed system
+// There will be a library of these that will be used along with
+// Requirements when a system is generated.
+class GeneralPrinciple {
+  description;
+}
+
+// Pointer to the textual representation of any Umple model element
+class UmpleModelElement {
+  isA ItemInFile;
+  ElementType type;
+}
+
+// One of the tests in the system
+class Test {
+  isA ItemInFile;
+}
+
+// A method, or other element of code that is present in code generated by AI
+// Non-methods can include do-activities or actions in state machines.
+class CodeBlock {
+  isA ItemInFile;
+}
+
+class EvidenceItem {
+  description;
+}
+
+class RequestedChange {
+  text;
+}
+
+enum ElementType {
+  class, interface, trait, attribute, association, associationClass, method, codeInjection, stateMachine, state, transition, mixset
+}
+
+enum ReviewCategory {
+  requirementProperlyImplementedInPart, requirementIncompletelyImplemented, principleValidlyApplied, principleNotFullyApplied, defectDetected, requirementChangeRequested, modelChangeSuggested, codeChangteSuggested, potentialVulnerabilityNoted, edgeCaseNeedsAddressing, newTestRequested
+}
+
+  
